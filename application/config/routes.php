@@ -49,7 +49,18 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 | Examples: my-controller/index -> My_controller/index
 |       my-controller/my-method -> My_controller/my_method
 */
-$route['default_controller'] = 'auth'; // Mengarahkan ke halaman login sebagai default
+
+// Default controller akan dicek di hook atau index.php untuk instalasi
+// Jika instalasi selesai, default_controller akan menjadi 'auth'
+// Jika belum, akan diarahkan ke 'install'
+if (file_exists(APPPATH . 'config/installed.txt')) {
+    $route['default_controller'] = 'auth'; // Mengarahkan ke halaman login sebagai default
+} else {
+    $route['default_controller'] = 'install';
+    $route['install'] = 'install/index';
+    $route['install/setup'] = 'install/setup';
+}
+
 $route['404_override'] = ''; // Bisa diatur nanti jika ada halaman error custom
 $route['translate_uri_dashes'] = FALSE;
 
