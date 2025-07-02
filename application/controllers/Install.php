@@ -118,23 +118,50 @@ class Install extends CI_Controller {
     private function setup_database_schema($db_name) {
         // Simpan state db_debug saat ini dan matikan sementara
         $original_db_debug_config = $this->config->item('db_debug');
-        $this->config->set_item('db_debug', FALSE);
+        $this->config->set_item('db_debug', FALSE); // Matikan debug global CI
 
-        // Tutup koneksi lama jika ada (dari autoload misalnya)
-        if (isset($this->db) && $this->db->conn_id) {
-            $this->db->close();
+        // HAPUS instance config database yang mungkin sudah ada di CI Config object
+        // Ini memaksa CI untuk membaca ulang dari file saat $this->load->database() berikutnya
+        if (isset($this->config->config['database'])) {
+            unset($this->config->config['database']);
+            log_message('debug', 'Unset $this->config->config[\'database\']');
+        }
+        if (isset($this->config->config['db'])) { // Alias
+            unset($this->config->config['db']);
+            log_message('debug', 'Unset $this->config->config[\'db\']');
         }
 
+        // Hapus juga instance $this->db jika sudah ada, untuk memaksa re-inisialisasi penuh
+        if (isset($this->db)) {
+            // Tutup koneksi lama jika $this->db ada dan memiliki koneksi aktif
+            if ($this->db->conn_id) {
+                $this->db->close();
+                log_message('debug', 'Old $this->db connection closed.');
+            }
+            unset($this->db);
+            log_message('debug', 'Unset $this->db');
+        }
+
+        // Sebagai tindakan lebih lanjut, pastikan CI Loader juga tidak memiliki cache internal untuk 'database'
+        // Ini mungkin tidak diperlukan karena $this->load->database() seharusnya menangani ini, tapi untuk jaga-jaga
+        if (isset($this->load->_ci_loaded_files) && in_array('database', $this->load->_ci_loaded_files)) {
+             $this->load->_ci_loaded_files = array_diff($this->load->_ci_loaded_files, array('database'));
+             log_message('debug', 'Removed "database" from $this->load->_ci_loaded_files');
+        }
+        // Ini lebih bersifat internal dan mungkin tidak aman untuk semua versi CI, jadi gunakan dengan hati-hati
+        // atau lewati jika tidak yakin. Untuk CI3, _ci_loaded_files ada di Loader.
+
         // Muat konfigurasi database dari file database.php yang baru ditulis
-        // Ini penting untuk mendapatkan setting hostname, username, password yang benar
-        // Kita belum tentu terhubung ke $db_name secara spesifik di sini.
+        log_message('debug', 'Attempting to load database configuration...');
         $this->load->database(null, FALSE, TRUE); // TRUE untuk return instance, FALSE untuk tidak auto-init
 
         // Periksa koneksi ke server database (tanpa harus memilih $db_name dulu)
         if (!$this->db->conn_id || $this->db->conn_id === FALSE) {
             $this->config->set_item('db_debug', $original_db_debug_config); // Kembalikan db_debug
+            log_message('error', 'Failed to connect to DB server after attempting to load new config.');
             return "Tidak dapat terhubung ke server database. Periksa hostname, username, dan password.";
         }
+        log_message('info', 'Successfully connected to DB server after loading new config.');
 
         // Cek apakah database $db_name sudah ada
         $query = $this->db->query("SHOW DATABASES LIKE ".$this->db->escape($db_name));
