@@ -85,4 +85,3 @@
     <button onclick="window.print();" class="btn btn-primary no-print"><i class="fas fa-print"></i> Cetak Detail</button>
     <a href="<?php echo base_url('admin/laporan/penjualan'); ?>" class="btn btn-secondary no-print"><i class="fas fa-arrow-left"></i> Kembali ke Laporan Penjualan</a>
 </div>
-```
