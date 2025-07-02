@@ -224,16 +224,63 @@ class Install extends CI_Controller {
         $db_path = APPPATH . 'config/database.php';
         if (is_writable($db_path)) {
             $content = file_get_contents($db_path);
-
-            // Ganti nilai placeholder dengan nilai sebenarnya
-            $content = preg_replace("/'hostname' => '.*?',/", "'hostname' => '{$host}',", $content);
-            $content = preg_replace("/'username' => '.*?',/", "'username' => '{$username}',", $content);
-            $content = preg_replace("/'password' => '.*?',/", "'password' => '{$password}',", $content);
-            $content = preg_replace("/'database' => '.*?',/", "'database' => '{$dbname}',", $content);
-
-            if (file_put_contents($db_path, $content) !== FALSE) {
-                return TRUE;
+            if ($content === FALSE) {
+                log_message('error', 'Gagal membaca database.php untuk update.');
+                return FALSE;
             }
+
+            $patterns = array(
+                "/'hostname' => '.*?',/",
+                "/'username' => '.*?',/",
+                "/'password' => '.*?',/",
+                "/'database' => '.*?',/"
+            );
+            $replacements = array(
+                "'hostname' => '{$host}',",
+                "'username' => '{$username}',",
+                "'password' => '{$password}',",
+                "'database' => '{$dbname}',"
+            );
+
+            $new_content = preg_replace($patterns, $replacements, $content);
+
+            if ($new_content === NULL) {
+                log_message('error', 'preg_replace gagal saat update database.php. Error: ' . preg_last_error_msg());
+                return FALSE;
+            }
+
+            log_message('debug', 'Konten database.php SEBELUM ditulis ulang: ' . $content);
+            log_message('debug', 'Konten database.php AKAN DITULIS: ' . $new_content);
+
+            if (file_put_contents($db_path, $new_content) !== FALSE) {
+                // Coba invalidate OPcache jika ada
+                if (function_exists('opcache_invalidate')) {
+                    opcache_invalidate($db_path, TRUE);
+                    log_message('debug', 'opcache_invalidate dipanggil untuk database.php');
+                }
+                // Verifikasi dengan membaca kembali
+                // clearstatcache agar file_get_contents berikutnya membaca dari disk, bukan cache stat PHP
+                clearstatcache(true, $db_path);
+                $verify_content = file_get_contents($db_path);
+                log_message('debug', 'Konten database.php SETELAH ditulis ulang (verifikasi): ' . $verify_content);
+
+                // Perbandingan harusnya case-sensitive dan exact.
+                // Menghapus spasi/baris baru di akhir untuk perbandingan yang lebih robust jika editor menambahkan/menghilangkannya.
+                if (trim($verify_content) === trim($new_content)) {
+                    log_message('info', 'Berhasil update dan verifikasi database.php');
+                    return TRUE;
+                } else {
+                    log_message('error', 'Gagal verifikasi penulisan database.php. Konten tidak cocok.');
+                    log_message('error', 'VERIFY CONTENT: ' . $verify_content); // Log konten yang terbaca untuk debug
+                    return FALSE;
+                }
+            } else {
+                log_message('error', 'Gagal menulis ke database.php.');
+                return FALSE;
+            }
+        } else {
+            log_message('error', 'database.php tidak writable: ' . $db_path);
+            // return FALSE; // Sudah implisit oleh akhir fungsi
         }
         return FALSE;
     }
