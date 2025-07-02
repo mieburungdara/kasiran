@@ -120,19 +120,35 @@ class Install extends CI_Controller {
         $this->load->dbforge();
 
         // 1. Coba buat database jika belum ada
-        if (!$this->dbforge->create_database($db_name)) {
-            // Gagal membuat database, mungkin karena sudah ada atau kurang hak akses.
-            // Kita akan tetap mencoba lanjut, karena jika DB sudah ada dan bisa dikoneksi, itu tidak masalah.
-            // Jika tidak bisa dikoneksi nanti, akan gagal di tahap koneksi.
-        }
+        $this->dbforge->create_database($db_name);
+        // Kita tidak lagi memeriksa return value di sini secara ketat untuk menghentikan script.
+        // Jika database sudah ada, create_database() akan gagal secara internal,
+        // tapi kita akan bergantung pada pengecekan koneksi berikutnya.
 
         // Muat ulang konfigurasi database yang baru saja ditulis
         // Ini penting karena CI mungkin sudah memuat konfigurasi lama (kosong)
+        // Matikan sementara db_debug untuk load database ini, agar tidak error jika DB belum ada saat CI pertama load
+        $current_db_debug = isset($this->db->db_debug) ? $this->db->db_debug : TRUE; // Simpan state db_debug saat ini
+
+        // Tutup koneksi lama jika ada (untuk memastikan config baru dipakai)
+        if (isset($this->db) && $this->db->conn_id) {
+            $this->db->close();
+        }
+
+        // Set db_debug ke FALSE sebelum load database baru
+        // Perlu dilakukan melalui config item karena $this->db mungkin belum sepenuhnya terinisialisasi
+        $this->config->set_item('db_debug', FALSE);
+
         $this->load->database(null, FALSE, TRUE); // Argumen ketiga TRUE untuk return instance DB
 
+        $this->config->set_item('db_debug', $current_db_debug); // Kembalikan state db_debug via config
+        $this->db->db_debug = $current_db_debug; // Kembalikan juga ke properti objek DB jika sudah ada
+
         // Cek koneksi database
-        if (!$this->db->conn_id) {
-            return "Tidak dapat terhubung ke database menggunakan konfigurasi yang diberikan.";
+        if (!$this->db->conn_id || $this->db->conn_id === FALSE) { // Periksa lebih ketat
+            // Jika create_database gagal karena permission, dan DB belum ada, ini akan gagal.
+            // Jika DB sudah ada tapi kredensial salah, ini juga akan gagal.
+            return "Tidak dapat terhubung ke database '{$db_name}' menggunakan konfigurasi yang diberikan. Pastikan database ada atau kredensial benar.";
         }
 
         // Baca file schema.sql
