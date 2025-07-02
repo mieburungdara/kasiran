@@ -152,16 +152,21 @@ class Install extends CI_Controller {
         // atau lewati jika tidak yakin. Untuk CI3, _ci_loaded_files ada di Loader.
 
         // Muat konfigurasi database dari file database.php yang baru ditulis
-        log_message('debug', 'Attempting to load database configuration...');
-        $this->load->database(null, FALSE, TRUE); // TRUE untuk return instance, FALSE untuk tidak auto-init
+        log_message('debug', 'Attempting to load database configuration and get a returned instance...');
+        // The third parameter TRUE is to keep query_builder explicitly enabled like the original call.
+        $temp_db = $this->load->database('default', TRUE, TRUE);
 
         // Periksa koneksi ke server database (tanpa harus memilih $db_name dulu)
-        if (!$this->db->conn_id || $this->db->conn_id === FALSE) {
+        // Check if the database object was successfully created and a connection ID exists
+        if (!is_object($temp_db) || !$temp_db->conn_id) {
             $this->config->set_item('db_debug', $original_db_debug_config); // Kembalikan db_debug
-            log_message('error', 'Failed to connect to DB server after attempting to load new config.');
+            log_message('error', 'Failed to connect to DB server using new config. $temp_db might not be an object or conn_id is invalid.');
             return "Tidak dapat terhubung ke server database. Periksa hostname, username, dan password.";
         }
-        log_message('info', 'Successfully connected to DB server after loading new config.');
+        log_message('info', 'Successfully connected to DB server with new config (returned instance).');
+
+        // If successful, assign the temporary DB object to the main $this->db property
+        $this->db = $temp_db;
 
         // Cek apakah database $db_name sudah ada
         $query = $this->db->query("SHOW DATABASES LIKE ".$this->db->escape($db_name));
