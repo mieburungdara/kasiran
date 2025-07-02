@@ -87,11 +87,11 @@
             </div>
         <?php endif; ?>
 
-        <?php echo form_open('install/setup'); ?>
+        <form method="post" action="<?php echo isset($form_action) ? htmlspecialchars($form_action, ENT_QUOTES, 'UTF-8') : ''; ?>">
 
             <div class="form-group">
                 <label for="base_url">Base URL Aplikasi</label>
-                <input type="text" name="base_url" id="base_url" value="<?php echo set_value('base_url', (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]" . preg_replace('@/index\.php$@' ,'', $_SERVER['SCRIPT_NAME']) . '/'); ?>" required>
+                <input type="text" name="base_url" id="base_url" value="<?php echo set_value('base_url', isset($suggested_base_url) ? htmlspecialchars($suggested_base_url, ENT_QUOTES, 'UTF-8') : ''); ?>" required>
                 <small>Contoh: http://localhost/nama_folder_aplikasi/</small>
             </div>
 
