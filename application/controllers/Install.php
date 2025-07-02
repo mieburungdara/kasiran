@@ -256,6 +256,12 @@ class Install extends CI_Controller {
                 return FALSE;
             }
 
+            // Escape input data to prevent issues with special characters in replacements
+            $host_escaped = addslashes($host);
+            $username_escaped = addslashes($username);
+            $password_escaped = addslashes($password);
+            $dbname_escaped = addslashes($dbname);
+
             $patterns = array(
                 "/'hostname' => '.*?',/",
                 "/'username' => '.*?',/",
@@ -263,16 +269,19 @@ class Install extends CI_Controller {
                 "/'database' => '.*?',/"
             );
             $replacements = array(
-                "'hostname' => '{$host}',",
-                "'username' => '{$username}',",
-                "'password' => '{$password}',",
-                "'database' => '{$dbname}',"
+                "'hostname' => '{$host_escaped}',",
+                "'username' => '{$username_escaped}',",
+                "'password' => '{$password_escaped}',",
+                "'database' => '{$dbname_escaped}',"
             );
 
             $new_content = preg_replace($patterns, $replacements, $content);
 
+            // CRITICAL: Check if preg_replace failed (it returns NULL on error)
             if ($new_content === NULL) {
-                log_message('error', 'preg_replace gagal saat update database.php. Error: ' . preg_last_error_msg());
+                // Log the error from preg_replace
+                $preg_error = preg_last_error_msg();
+                log_message('error', "preg_replace failed while updating database.php. Error: {$preg_error}. Input data (escaped): host='{$host_escaped}', user='{$username_escaped}', db='{$dbname_escaped}'.");
                 return FALSE;
             }
 
