@@ -116,39 +116,64 @@ class Install extends CI_Controller {
 
 
     private function setup_database_schema($db_name) {
-        // Load dbforge only when needed
-        $this->load->dbforge();
+        // Simpan state db_debug saat ini dan matikan sementara
+        $original_db_debug_config = $this->config->item('db_debug');
+        $this->config->set_item('db_debug', FALSE);
 
-        // 1. Coba buat database jika belum ada
-        $this->dbforge->create_database($db_name);
-        // Kita tidak lagi memeriksa return value di sini secara ketat untuk menghentikan script.
-        // Jika database sudah ada, create_database() akan gagal secara internal,
-        // tapi kita akan bergantung pada pengecekan koneksi berikutnya.
-
-        // Muat ulang konfigurasi database yang baru saja ditulis
-        // Ini penting karena CI mungkin sudah memuat konfigurasi lama (kosong)
-        // Matikan sementara db_debug untuk load database ini, agar tidak error jika DB belum ada saat CI pertama load
-        $current_db_debug = isset($this->db->db_debug) ? $this->db->db_debug : TRUE; // Simpan state db_debug saat ini
-
-        // Tutup koneksi lama jika ada (untuk memastikan config baru dipakai)
+        // Tutup koneksi lama jika ada (dari autoload misalnya)
         if (isset($this->db) && $this->db->conn_id) {
             $this->db->close();
         }
 
-        // Set db_debug ke FALSE sebelum load database baru
-        // Perlu dilakukan melalui config item karena $this->db mungkin belum sepenuhnya terinisialisasi
-        $this->config->set_item('db_debug', FALSE);
+        // Muat konfigurasi database dari file database.php yang baru ditulis
+        // Ini penting untuk mendapatkan setting hostname, username, password yang benar
+        // Kita belum tentu terhubung ke $db_name secara spesifik di sini.
+        $this->load->database(null, FALSE, TRUE); // TRUE untuk return instance, FALSE untuk tidak auto-init
 
-        $this->load->database(null, FALSE, TRUE); // Argumen ketiga TRUE untuk return instance DB
+        // Periksa koneksi ke server database (tanpa harus memilih $db_name dulu)
+        if (!$this->db->conn_id || $this->db->conn_id === FALSE) {
+            $this->config->set_item('db_debug', $original_db_debug_config); // Kembalikan db_debug
+            return "Tidak dapat terhubung ke server database. Periksa hostname, username, dan password.";
+        }
 
-        $this->config->set_item('db_debug', $current_db_debug); // Kembalikan state db_debug via config
-        $this->db->db_debug = $current_db_debug; // Kembalikan juga ke properti objek DB jika sudah ada
+        // Cek apakah database $db_name sudah ada
+        $query = $this->db->query("SHOW DATABASES LIKE ".$this->db->escape($db_name));
+        $database_exists = ($query && $query->num_rows() > 0);
 
-        // Cek koneksi database
-        if (!$this->db->conn_id || $this->db->conn_id === FALSE) { // Periksa lebih ketat
-            // Jika create_database gagal karena permission, dan DB belum ada, ini akan gagal.
-            // Jika DB sudah ada tapi kredensial salah, ini juga akan gagal.
-            return "Tidak dapat terhubung ke database '{$db_name}' menggunakan konfigurasi yang diberikan. Pastikan database ada atau kredensial benar.";
+        if (!$database_exists) {
+            $this->load->dbforge(); // Load dbforge hanya jika kita benar-benar perlu membuat DB
+            if (!$this->dbforge->create_database($db_name)) {
+                $this->config->set_item('db_debug', $original_db_debug_config); // Kembalikan db_debug
+                return "Gagal membuat database '{$db_name}'. Pastikan user memiliki hak akses CREATE DATABASE atau buat database secara manual.";
+            }
+            // Setelah membuat database, kita perlu memastikan koneksi berikutnya menggunakannya.
+            // Menutup dan memuat ulang koneksi adalah cara yang paling pasti.
+            $this->db->close();
+            $this->load->database(null, FALSE, TRUE); // Re-load dengan $db_name sekarang seharusnya ada di config
+
+            if (!$this->db->conn_id || $this->db->conn_id === FALSE || !$this->db->db_select($db_name)) {
+                 $this->config->set_item('db_debug', $original_db_debug_config);
+                 return "Berhasil membuat database '{$db_name}' tetapi gagal terkoneksi atau memilihnya setelah pembuatan.";
+            }
+        } else {
+            // Database sudah ada, pastikan kita terhubung dan memilihnya
+            if (!$this->db->db_select($db_name)) {
+                $this->config->set_item('db_debug', $original_db_debug_config);
+                return "Database '{$db_name}' sudah ada, tetapi gagal memilihnya (select). Periksa hak akses user database.";
+            }
+        }
+
+        // Pada titik ini, kita seharusnya sudah terhubung ke $db_name yang benar.
+        // Kembalikan db_debug ke state semula sebelum eksekusi schema.sql
+        $this->config->set_item('db_debug', $original_db_debug_config);
+        if(isset($this->db) && $this->db->conn_id){ // Pastikan objek db ada dan terkoneksi
+            $this->db->db_debug = $original_db_debug_config;
+        }
+
+        // Cek koneksi sekali lagi untuk memastikan kita benar-benar terhubung ke database yang benar
+        if (!$this->db->conn_id || $this->db->conn_id === FALSE || $this->db->database !== $db_name) {
+            // Ini seharusnya tidak terjadi jika logika di atas benar, tapi sebagai fallback.
+            return "Gagal memastikan koneksi ke database '{$db_name}' yang spesifik sebelum menjalankan skema. Proses instalasi tidak dapat dilanjutkan.";
         }
 
         // Baca file schema.sql
